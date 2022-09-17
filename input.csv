@@ -1,0 +1,3 @@
+fluid_1,fluid_2,t_1_in,t_2_in,t_1_out,m_dot_1,V_dot_2,press_1_bara,press_2_bara,tube_1_key,tube_2_key,fin_2_key,arrangement,control_vol_per_tube,tubes_per_row_num,rows_num,circuits_num,tube_len_mm,fin_pitch_mm
+water,air,50,25,NaN,0.2,1.4,8,1,0,NaN,1,countercurrent,2,20,4,4,500,2.1
+CO2,air,100,25,30,NaN,1.4,100,1,0,NaN,1,countercurrent,0,20,4,4,500,2.1

@@ -1,0 +1,29 @@
+COOLHEXT - COOLest Heat EXchanger Tool
+Heat transfer rating tool with focus on finned pack coils, in particular gas coolers.
+ex FPHX + GCCC
+
+obiettivo:
+	- gestire vari modi di funzionamento: 
+		- calcolo concentrato (singolo volume di controllo)
+		- calcolo distribuito (multipli volumi di controllo)
+		- geometria arbitraria (input U e A, data una configurazione = arrangement)
+		- scambiatore pacco alettato (GCCC)
+		- scambiatore tubo in tubo (CTHE)
+	- vari input proprietà fluidi:
+		- proprietà coolprop
+		- proprietà simple (tabelle aria, acqua, CO2)
+		- proprietà date (solo monofase - single-phase)
+		
+nomi variabili
+	- espliciti dove possibile
+	- nomi composti separati da _
+	- _1 fluido primario
+	- _2 fluido secondario
+	- _a air (sempre 2)
+	- _f fluid
+	- _fin
+	- _tube
+	- _i in	t_1i 
+	- _o out t_2o
+	
+dati input e output e opzioni (modi) salvati su foglio db (es csv)
