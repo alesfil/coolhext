@@ -1,4 +1,4 @@
-from math import log, pi, tanh
+from math import log, log10, exp, pi, tanh
 
 import CoolProp.CoolProp as CP
 import numpy as np
@@ -7,7 +7,7 @@ mat_cond = {"copper": 330, "aluminium": 200, "prepainted_aluminium": 170} # W/(m
 def DegToKelvin(t):
        return t + 273.15     
 
-class Fluid():
+class Fluid:
     def __init__(self, t_i, t_o, m_dot, fluid, pressure):
         self.t_i = t_i 		# inlet temp
         self.t_o = t_o		# outlet temp
@@ -23,11 +23,26 @@ class Fluid():
 	# thermal conductivity
         self.k =  CP.PropsSI('L','T',DegToKelvin(t),'P',self.pressure,self.fluid)	
 	# viscosity
-        self.nu =  CP.PropsSI('V','T',DegToKelvin(t),'P',self.pressure,self.fluid)
+        self.mu =  CP.PropsSI('V','T',DegToKelvin(t),'P',self.pressure,self.fluid)
         # Prandtl
-        self.Pr = self.cp*self.nu/self.k
+        self.Pr = self.cp*self.mu/self.k
 
-class Tube():
+    def calcPropSat(self):
+        self.cpL =
+        self.cpV =
+        self.rhoL =
+        self.rhoV =
+        self.kL =
+        self.kV =
+        self.muL =
+        self.muV =
+        fluid.sigma =
+        self.prL = self.cpL*self.muL/self.kL
+
+    def Reynolds(self, fluidVelocity, D):
+        self.Re = self.rho * fluidVelocity * D / self.mu
+
+class Tube:
     def __init__(self, d_ext, thickness, mat):
         self.d_ext = d_ext
         self.d_int = d_ext - 2*thickness
@@ -35,21 +50,94 @@ class Tube():
         self.k = mat_cond[mat]
         self.A_ext_lin = pi*self.d_ext
         self.A_int_lin = pi*self.d_int
-        self.A_cross_lin = 0.25*pi*self.d_int**2
+        self.A_crossSec = 0.25*pi*self.d_int**2
+
+    def fluidVelocity(self, fluid):
+        self.velocity = fluid.m_dot/fluid.rho/self.A_crossSec ## forse da spostare in fluid, passando solo area, ma c'è un problema con fluidvel nel caso di fluidWall
         
-    def HeatTransferCoefficientConvection(self):
-        pass
+    def HeatTransferCoefficientConvection(self, fluidBulk, fluidWall):
+        fluidBulk.Reynolds(self.velocity, self.d_int)
+        if fluidBulk.Re > 2300:
+            # turbulent, Gnielinsky
+            Nu_b = (self.f / 8 * (fluidBulk.Re - 1000) * fluidBulk.Pr) / (1.07 + 12.7 * (self.f / 8) ** 0.5 * (fluidBulk.Pr ** (2 / 3) - 1))
+        else:
+            # laminar for long tubes, fully developed flow (TO BE FIXED)
+            Nu_b = 3.66
 
-    def HeatTransferCoefficientCondensation(self):
-        pass
-        
-    def PressureDropConvection(self):
-        pass     
+        if fluidBulk.fluid == 'R-744' and quality == 9: ## eventualmente usare un altro modo per definire il fluido transcritico
+            fluidWall.Reynolds(self.velocity, self.d_int)
+            Nu_w = (self.f / 8 * (fluidWall.Re - 1000) * fluidWall.Pr) / (1.07 + 12.7 * (self.f / 8) ** 0.5 * (fluidWall.Pr ** (2 / 3) - 1))
+            Nu = (Nu_w + Nu_b)/2*fluidWall.k/fluidBulk.k
+        else:
+            Nu = Nu_b
 
-    def PressureDropCondensation(self):
-        pass
+        # Dittus Boelter
+        #Nu = 0.023 * fluidBulk.Re ** 0.8 * fluidBulk.Pr ** 0.3
 
-class Fin():
+        return Nu * fluidBulk.k / self.d_int
+
+    def HeatTransferCoefficientCondensation(self, fluid, x, GG, tsat, twall):
+        ### Heat transfer coefficient for condensation in horizontal tube
+
+        ### Correlazione Cavallini,  \
+        ### Condensation in Horizontal Smooth Tubes: \
+        ### A New Heat Transfer Model for Heat Exchanger Design,\
+        ### Heat Transfer Engineering 2006
+        JG = GG * x / (fluid.rhoV * (fluid.rhoL - fluid.rhoV) * g * D) ** 0.5
+        # adimensional gas velocity
+        Xtt = ((1 - x) / x) ** 0.9 * (fluid.rhoV / fluid.rhoL) ** 0.5 * (fluid.muL / fluid.muV) ** 0.1
+        # Martinelli parameter, valido solo per HFC, CO2, NH3 (non valido per HC, bisognerebbe sostituire 2.6 con 1.6)
+        JGT = ((7.5 / (4.6 * Xtt ** 1.111 + 1)) ** -3 + 2.6 ** -3) ** (-1 / 3)
+        ReLO = GG * D / fluid.muL
+        alphaLO = 0.023 * ReLO ** 0.8 * fluid.PrL ** 0.4 * fluid.kL / D
+
+        # DT independent regime
+        alphaA = alphaLO * (1 + 1.128 * x ** 0.817 * (fluid.rhoL / fluid.rhoV) ** 0.3685 * (fluid.muL / fluid.muV) ** 0.2363 * (1 - fluid.muV / fluid.muL) ** 2.144 * fluid.PrL ** -0.1)
+        if JG >= JGT:
+            # DT independent, annular flow
+            alpha = alphaA
+        else:
+            # DT dependent, stratified flow
+            alphaSTRAT = 0.725 / (1 + 0.741 * ((1 - x) / x) ** 0.3321) * (fluid.kL ** 3 * g * R * fluid.rhoL * (fluid.rhoL - fluid.rhoV) / (fluid.muL * D * (tsat - twall))) ** 0.25 + (1 - x ** 0.087) * alphaLO
+            alpha = (alphaA * (JGT / JG) ** 0.8 - alphaSTRAT) * (JG / JGT) + alphaSTRAT
+        return alpha
+
+    def frictionFactorConvection(self, Re):
+        # Filonenko, smooth tubes
+        if Re > 2300:
+            self.f = (1.82 * log10(Re) - 1.64) ** -2
+        else:
+            self.f = 64/Re
+
+    def PressureDropCondensation(self, fluid, x, GG):
+        ### Diani, Mancin, Rossetto, R1234ze flow boiling inside a 3.4 ID microfin tube, 2000
+        ### vedi anche Cavallini, Heat transfer and pressure drop during condensation of refrigerants inside horizontal enhanced tubes, 2000
+        ### come richiamato da Condensation of CO2 at low temperature, Zilly, Jang, Hrhjak (ACRC) 2003
+        ### considerare f_fanning = 4*f_darcy
+
+        # Blasius
+        f_LO = 0.079 * (GG * D / fluid.muV) ** -0.25
+        z = (1 - x) ** 2 + x ** 2 * fluid.rhoL / fluid.rhoV * (fluid.muV / fluid.muL) ** 0.2
+        E = 1 + 0.331 * log(fluid.muL * GG * x / fluid.rhoV / fluid.sigma) + 0.0919
+
+        if E > 0.95:
+            E = 0.95
+        if E < 0:
+            E = 0
+
+        # press/p_crit = reduced pressure
+        WW = 1.398 * fluid.press / fluid.p_crit
+        f = x ** 0.9525 * (1 - x) ** 0.414
+        HH = (fluid.rhoL / fluid.rhoV) ** 1.132 * (muV / muL) ^ 0.44 * (1 - muV / muL) ^ 3.542
+
+        # multiplier: phi_LO = phi_LO_DIANI_CAVALLIN ^2
+        phi_LO = z + 3.595 * f * HH * (1 - E) ** WW
+
+        ## frictional gradient
+        dp_frac_dz_f = phi_LO * 2 * f_LO * GG ^ 2 / D / rhoL
+        return dp_frac_dz_f
+
+class Fin:
     def __init__(self, tube_pitch, row_pitch, fin_pitch, thickness, mat, tube_diam):
         self.tube_pitch = tube_pitch
         self.row_pitch = row_pitch
@@ -170,6 +258,10 @@ class HexCell(HexBasics):
                 AA = K/2*(1-K/2+1/4*K**2) + K*(1-K/2)*(1-2*K*R*(1-K/2))*exp(2*K*R)+(1-K/2)**3*exp(4*K*R)
 
             P = 1/R*(1-1/AA)
+
+        if R == 0:
+            P = 1 - exp(-NTU2)
+
         return P  
         
     def EnergyBalance(self):
@@ -177,10 +269,13 @@ class HexCell(HexBasics):
        t_2_avg = 0.5*(self.fluid_2.t_i + self.fluid_2.t_o)
        self.fluid_1.calcProp(t_1_avg)
        self.fluid_2.calcProp(t_2_avg)
-       alpha_int = self.tube.HeatTransferCoefficientConvection()
+       self.tube.fluidVelocity(self.fluid_1)
+       self.fluid_1.Reynolds(self.fluid_1.Re)
+       f = self.tube.frictionalFactor(self.fluid_1.Re) # funzionerà?? vedere dentro HeatTransferCoefficientConvection, oppure sistemarlo ancora ad un livello superiore (prima=
+       alpha_int = self.tube.HeatTransferCoefficientConvection() ## vedere se prende f ... per non calcolarlo due volte
        alpha_ext = self.fin.HeatTransferCoefficientConvection()
-       eta_avg = FinEfficiency(alpha_ext) # sistemare aree int ext
-       alpha_ext_w =  alpha_ext * eta_avg)      
+       eta_avg = fin.FinEfficiency(alpha_ext) # sistemare aree int ext
+       alpha_ext_w =  alpha_ext * eta_avg
        self.U = OverallHTC(alpha_int, alpha_ext_w, R_tube, R_fincollar)
        P = self.P(arrangement, row_num)       
        theta =  P / self.NTU2()
@@ -235,8 +330,8 @@ class HeatExchanger(HexBasics): # ma serve fare inheritance da HexBasic o basta 
                     for k in range(0, k_max):
                         print("ora qui va fatto il calcolo") ## inizializzare prima
                         hxCells[i][j][k].EnergyBalance()
-           ttfo = hxCells[i][j][k_max-1]    # inserire anche mod 2          
-           err_t = abs(ttfo - self.fluid_1.t_o)
-           counter += 1  
+            ttfo = hxCells[i][j][k_max-1]    # inserire anche mod 2
+            err_t = abs(ttfo - self.fluid_1.t_o)
+            counter += 1
             
 
